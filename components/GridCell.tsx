@@ -27,7 +27,8 @@ const GridCellComponent: React.FC<GridCellProps> = ({
   onNameBlur,
   selectedTool,
   isMergeAnchor,
-  isExporting
+  isExporting,
+  style
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
