@@ -501,16 +501,18 @@ function AppContent() {
         </nav>
 
         <main className="flex-1 relative flex flex-col min-w-0 overflow-hidden bg-zinc-900/50" role="main">
+          {/* OPTIMIZED: Static background instead of radial-gradient */}
           <div 
-            className="absolute inset-0 opacity-[0.05]" 
+            className="absolute inset-0 pointer-events-none"
             style={{ 
-              backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)', 
-              backgroundSize: '24px 24px' 
+              backgroundColor: 'rgba(255,255,255,0.02)',
+              backgroundImage: 'linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)',
+              backgroundSize: '40px 40px'
             }}
             aria-hidden="true"
           />
 
-          <div className={`flex-1 overflow-auto relative scroll-smooth w-full h-full ${viewMode ? 'pb-0' : 'pb-20 sm:pb-24 lg:pb-0'}`}>
+          <div className={`flex-1 overflow-auto relative w-full h-full ${viewMode ? 'pb-0' : 'pb-20 sm:pb-24 lg:pb-0'}`}>
             <div className="min-h-full w-full flex items-center justify-center p-2 sm:p-4 md:p-6 lg:p-8 xl:p-12">
               <GridCanvas 
                 key={remountKey}
