@@ -18,7 +18,7 @@ interface GridCellProps {
   isExporting?: boolean;
 }
 
-// Static styles outside component to prevent recreation
+// Static styles outside component
 const STUDENT_ICON_SIZE = { width: 12, height: 12 };
 const STUDENT_ICON_SIZE_MERGED = { width: 16, height: 16 };
 
@@ -43,6 +43,7 @@ const GridCellComponent: React.FC<GridCellProps> = ({
   );
 
   const nameLength = data.name?.length || 0;
+  const cellType = data.type;
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -51,15 +52,16 @@ const GridCellComponent: React.FC<GridCellProps> = ({
     }
   }, [isEditing]);
 
+  // Stable callback references
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    if (data.type === 'student' && selectedTool === 'student') {
+    if (cellType === 'student' && selectedTool === 'student') {
       if (!isEditing) setIsEditing(true);
       return;
     }
     onClick(row, col);
     setIsEditing(false);
-  }, [data.type, selectedTool, isEditing, onClick, row, col]);
+  }, [cellType, selectedTool, isEditing, onClick, row, col]);
 
   const handleBlur = useCallback(() => {
     setIsEditing(false);
@@ -77,12 +79,12 @@ const GridCellComponent: React.FC<GridCellProps> = ({
     onNameChange(row, col, e.target.value);
   }, [onNameChange, row, col]);
 
-  // Memoize cell styles - only recalculate when necessary
+  // Memoize cell styles
   const cellClasses = useMemo(() => {
     const baseClasses = 'relative w-full h-full transition-all duration-200 cursor-pointer rounded-[2px] overflow-hidden';
     const mergeClasses = isMergeAnchor ? 'ring-4 ring-purple-500 ring-inset z-20' : '';
     
-    switch (data.type) {
+    switch (cellType) {
       case 'student':
         return `${baseClasses} ${mergeClasses} bg-white border-2 border-zinc-900 hover:border-emerald-600 shadow-sm`;
       case 'teacher':
@@ -93,9 +95,9 @@ const GridCellComponent: React.FC<GridCellProps> = ({
       default:
         return `${baseClasses} ${mergeClasses} bg-transparent ${isExporting ? 'border-none' : 'border border-dashed border-zinc-300 hover:border-zinc-400'}`;
     }
-  }, [data.type, isMergeAnchor, isExporting]);
+  }, [cellType, isMergeAnchor, isExporting]);
 
-  // Memoize text size calculation
+  // Memoize text size
   const textSizeClass = useMemo(() => {
     if (isMerged) {
       if (nameLength > 20) return 'text-[10px] sm:text-xs md:text-base';
@@ -107,15 +109,14 @@ const GridCellComponent: React.FC<GridCellProps> = ({
     return 'text-[10px] sm:text-xs md:text-sm';
   }, [isMerged, nameLength]);
 
-  // Memoize icon size
   const iconSize = useMemo(() => 
     isMerged ? STUDENT_ICON_SIZE_MERGED : STUDENT_ICON_SIZE,
     [isMerged]
   );
 
-  // Render content based on cell type
-  const renderContent = useCallback(() => {
-    switch (data.type) {
+  // Render content based on cell type - memoized
+  const content = useMemo(() => {
+    switch (cellType) {
       case 'student': {
         return (
           <div className="w-full h-full flex flex-col items-center justify-center p-2 relative group">
@@ -159,8 +160,8 @@ const GridCellComponent: React.FC<GridCellProps> = ({
         );
       }
 
-      case 'corridor-vertical': {
-        // Use CSS pattern instead of SVG for better performance
+      case 'corridor-vertical':
+      case 'corridor-horizontal': {
         return (
           <div 
             className="w-full h-full bg-zinc-100/50 relative shadow-inner border-x border-zinc-300/30"
@@ -172,22 +173,10 @@ const GridCellComponent: React.FC<GridCellProps> = ({
         );
       }
 
-      case 'corridor-horizontal': {
-        return (
-          <div 
-            className="w-full h-full bg-zinc-100/50 relative shadow-inner border-y border-zinc-300/30"
-            style={{
-              backgroundImage: `repeating-linear-gradient(135deg, transparent, transparent 3px, rgba(113, 113, 122, 0.15) 3px, rgba(113, 113, 122, 0.15) 4px)`,
-              backgroundSize: '6px 6px'
-            }}
-          />
-        );
-      }
-
       default:
         return null;
     }
-  }, [data.type, data.name, isEditing, isExporting, isMerged, textSizeClass, iconSize, handleNameChange, handleBlur, handleKeyDown]);
+  }, [cellType, data.name, isEditing, isExporting, isMerged, textSizeClass, iconSize, handleNameChange, handleBlur, handleKeyDown]);
 
   return (
     <div 
@@ -195,29 +184,33 @@ const GridCellComponent: React.FC<GridCellProps> = ({
       className={cellClasses}
       style={{ contain: 'layout style paint' }}
     >
-      {renderContent()}
+      {content}
     </div>
   );
 };
 
-// Custom comparison function for memo to prevent unnecessary re-renders
+// OPTIMIZED: Custom comparison that ignores irrelevant prop changes
 export const GridCell = memo(GridCellComponent, (prevProps, nextProps) => {
-  // Only re-render if these props change
+  // Early return for obvious changes
   if (prevProps.row !== nextProps.row) return false;
   if (prevProps.col !== nextProps.col) return false;
-  if (prevProps.selectedTool !== nextProps.selectedTool) return false;
   if (prevProps.isMergeAnchor !== nextProps.isMergeAnchor) return false;
   if (prevProps.isExporting !== nextProps.isExporting) return false;
-  if (prevProps.totalRows !== nextProps.totalRows) return false;
-  if (prevProps.totalCols !== nextProps.totalCols) return false;
   
-  // Deep compare data object
+  // selectedTool only matters for student cells (triggers edit mode)
+  if (prevProps.selectedTool !== nextProps.selectedTool) {
+    // Only re-render if this is a student cell or was a student cell
+    if (prevProps.data.type === 'student' || nextProps.data.type === 'student') {
+      return false;
+    }
+  }
+  
+  // Deep compare data object - only check relevant fields
   if (prevProps.data.id !== nextProps.data.id) return false;
   if (prevProps.data.type !== nextProps.data.type) return false;
   if (prevProps.data.name !== nextProps.data.name) return false;
   if (prevProps.data.rowSpan !== nextProps.data.rowSpan) return false;
   if (prevProps.data.colSpan !== nextProps.data.colSpan) return false;
   
-  // Callbacks are stable due to useCallback in parent
   return true;
 });
