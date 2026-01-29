@@ -20,7 +20,7 @@ interface GridCanvasProps {
   isExporting: boolean;
 }
 
-// Memoized Board component to prevent re-renders
+// Memoized Board component
 const Board = memo(({ vertical = false }: { vertical?: boolean }) => (
   <div className={`
       flex items-center justify-center bg-white border-2 border-zinc-900 shadow-sm z-10
@@ -97,20 +97,12 @@ export const GridCanvas: React.FC<GridCanvasProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Use Map for O(1) cell lookup instead of O(n) array.find
-  const cellMap = useMemo(() => {
-    const map = new Map<string, CellData>();
-    cells.forEach(cell => {
-      map.set(`${cell.row}-${cell.col}`, cell);
-    });
-    return map;
+  // Simple cell getter - no Map overhead that causes issues
+  const getCell = useCallback((row: number, col: number) => {
+    return cells.find(c => c.row === row && c.col === col);
   }, [cells]);
 
-  const getCell = useCallback((row: number, col: number) => {
-    return cellMap.get(`${row}-${col}`);
-  }, [cellMap]);
-
-  // Memoize grid templates - only recalculate when necessary
+  // Memoize grid templates
   const { colTemplate, rowTemplate } = useMemo(() => {
     if (!gridConfig.autoResize) {
       return {
@@ -119,39 +111,26 @@ export const GridCanvas: React.FC<GridCanvasProps> = ({
       };
     }
 
-    // Pre-calculate cell types per row/col for efficiency
-    const colHasBlocker = new Array(gridConfig.cols).fill(false);
-    const colHasTrigger = new Array(gridConfig.cols).fill(false);
-    const rowHasBlocker = new Array(gridConfig.rows).fill(false);
-    const rowHasTrigger = new Array(gridConfig.rows).fill(false);
-
-    cells.forEach(cell => {
-      if (cell.type === 'student' || cell.type === 'teacher') {
-        colHasBlocker[cell.col] = true;
-        rowHasBlocker[cell.row] = true;
-      }
-      if (cell.type === 'corridor-vertical') {
-        colHasTrigger[cell.col] = true;
-      }
-      if (cell.type === 'corridor-horizontal') {
-        rowHasTrigger[cell.row] = true;
-      }
-    });
-
     let cols = '';
     for (let c = 0; c < gridConfig.cols; c++) {
-      cols += (colHasTrigger[c] && !colHasBlocker[c]) ? '0.35fr ' : '1fr ';
+      const colCells = cells.filter(cell => cell.col === c);
+      const hasBlocker = colCells.some(cell => cell.type === 'student' || cell.type === 'teacher');
+      const hasTrigger = colCells.some(cell => cell.type === 'corridor-vertical');
+      cols += (hasTrigger && !hasBlocker) ? '0.35fr ' : '1fr ';
     }
 
     let rows = '';
     for (let r = 0; r < gridConfig.rows; r++) {
-      rows += (rowHasTrigger[r] && !rowHasBlocker[r]) ? '0.35fr ' : '1fr ';
+      const rowCells = cells.filter(cell => cell.row === r);
+      const hasBlocker = rowCells.some(cell => cell.type === 'student' || cell.type === 'teacher');
+      const hasTrigger = rowCells.some(cell => cell.type === 'corridor-horizontal');
+      rows += (hasTrigger && !hasBlocker) ? '0.35fr ' : '1fr ';
     }
 
     return { colTemplate: cols.trim(), rowTemplate: rows.trim() };
   }, [gridConfig.cols, gridConfig.rows, gridConfig.autoResize, cells]);
 
-  // Memoize covered coordinates calculation
+  // Memoize covered coordinates
   const coveredCoordinates = useMemo(() => {
     const covered = new Set<string>();
     cells.forEach(cell => {
@@ -169,38 +148,7 @@ export const GridCanvas: React.FC<GridCanvasProps> = ({
     return covered;
   }, [cells]);
 
-  // Pre-compute grid cells data to avoid recalculation during render
-  const gridCells = useMemo(() => {
-    const totalCells = gridConfig.rows * gridConfig.cols;
-    const result: Array<{ row: number; col: number; cellData: CellData | undefined; isCovered: boolean }> = [];
-    
-    for (let index = 0; index < totalCells; index++) {
-      const row = Math.floor(index / gridConfig.cols);
-      const col = index % gridConfig.cols;
-      const key = `${row}-${col}`;
-      
-      if (coveredCoordinates.has(key)) continue;
-      
-      const cellData = cellMap.get(key);
-      result.push({
-        row,
-        col,
-        cellData,
-        isCovered: false
-      });
-    }
-    return result;
-  }, [gridConfig.rows, gridConfig.cols, cellMap, coveredCoordinates]);
-
-  // Memoized callbacks to prevent GridCell re-renders
-  const handleCellClick = useCallback((row: number, col: number) => {
-    onCellClick(row, col);
-  }, [onCellClick]);
-
-  const handleNameChange = useCallback((row: number, col: number, name: string) => {
-    onCellNameChange(row, col, name);
-  }, [onCellNameChange]);
-
+  // Stable callbacks
   const handleAddRowTop = useCallback(() => onAddRow('top'), [onAddRow]);
   const handleAddRowBottom = useCallback(() => onAddRow('bottom'), [onAddRow]);
   const handleAddColLeft = useCallback(() => onAddCol('left'), [onAddCol]);
@@ -208,10 +156,11 @@ export const GridCanvas: React.FC<GridCanvasProps> = ({
 
   return (
     <div className="w-full flex justify-center">
+      {/* REMOVED: will-change and contain properties that cause jitter */}
       <div 
         id={id}
         ref={containerRef}
-        className="relative bg-white shadow-2xl shadow-black/50 ring-1 ring-zinc-200 transition-all duration-300 flex flex-col will-change-transform mx-auto"
+        className="relative bg-white shadow-2xl shadow-black/50 ring-1 ring-zinc-200 flex flex-col mx-auto"
         style={{ 
           aspectRatio: '210/297', 
           width: '100%', 
@@ -219,7 +168,7 @@ export const GridCanvas: React.FC<GridCanvasProps> = ({
           minWidth: '280px', 
         }}
       >
-        {/* Optimized Grain Layer */}
+        {/* Grain Layer */}
         <div 
           className="absolute inset-0 pointer-events-none mix-blend-multiply z-0 opacity-[0.03]" 
           style={{ 
@@ -255,32 +204,37 @@ export const GridCanvas: React.FC<GridCanvasProps> = ({
                 <AddTrigger direction="left" onClick={handleAddColLeft} viewMode={viewMode} />
                 <AddTrigger direction="right" onClick={handleAddColRight} viewMode={viewMode} />
 
+                {/* REMOVED: contain property that causes jitter */}
                 <div 
                   className="w-full h-full grid gap-1 sm:gap-2 md:gap-3 content-center"
                   style={{
                     gridTemplateColumns: colTemplate,
-                    gridTemplateRows: rowTemplate,
-                    contain: 'layout paint'
+                    gridTemplateRows: rowTemplate
                   }}
                 >
-                  {gridCells.map(({ row, col, cellData }) => {
-                    const finalCellData = cellData || { id: `${row}-${col}`, row, col, type: 'eraser' as const };
+                  {Array.from({ length: gridConfig.rows * gridConfig.cols }).map((_, index) => {
+                    const row = Math.floor(index / gridConfig.cols);
+                    const col = index % gridConfig.cols;
                     
+                    if (coveredCoordinates.has(`${row}-${col}`)) return null;
+
+                    const cellData = getCell(row, col) || { id: `${row}-${col}`, row, col, type: 'eraser' as const };
+
                     return (
                       <GridCell 
                         key={`${row}-${col}`}
                         row={row}
                         col={col}
-                        data={finalCellData}
+                        data={cellData}
                         selectedTool={selectedTool}
-                        onClick={handleCellClick}
-                        onNameChange={handleNameChange}
+                        onClick={onCellClick}
+                        onNameChange={onCellNameChange}
                         onNameBlur={onCellNameBlur}
                         totalRows={gridConfig.rows}
                         totalCols={gridConfig.cols}
                         style={{
-                          gridRow: `span ${finalCellData.rowSpan || 1}`,
-                          gridColumn: `span ${finalCellData.colSpan || 1}`
+                          gridRow: `span ${cellData.rowSpan || 1}`,
+                          gridColumn: `span ${cellData.colSpan || 1}`
                         }}
                         isMergeAnchor={mergeAnchor?.row === row && mergeAnchor?.col === col}
                         isExporting={isExporting}

@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect, memo, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, memo, useCallback } from 'react';
 import { ToolType, CellData } from '../types';
 import { User, MonitorPlay } from 'lucide-react';
 
@@ -18,10 +18,6 @@ interface GridCellProps {
   isExporting?: boolean;
 }
 
-// Static styles outside component
-const STUDENT_ICON_SIZE = { width: 12, height: 12 };
-const STUDENT_ICON_SIZE_MERGED = { width: 16, height: 16 };
-
 const GridCellComponent: React.FC<GridCellProps> = ({ 
   row,
   col,
@@ -35,15 +31,6 @@ const GridCellComponent: React.FC<GridCellProps> = ({
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  
-  // Memoize expensive calculations
-  const isMerged = useMemo(() => 
-    (data.rowSpan || 1) > 1 || (data.colSpan || 1) > 1,
-    [data.rowSpan, data.colSpan]
-  );
-
-  const nameLength = data.name?.length || 0;
-  const cellType = data.type;
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -52,20 +39,19 @@ const GridCellComponent: React.FC<GridCellProps> = ({
     }
   }, [isEditing]);
 
-  // Stable callback references
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    if (cellType === 'student' && selectedTool === 'student') {
+    if (data.type === 'student' && selectedTool === 'student') {
       if (!isEditing) setIsEditing(true);
       return;
     }
     onClick(row, col);
     setIsEditing(false);
-  }, [cellType, selectedTool, isEditing, onClick, row, col]);
+  }, [data.type, selectedTool, isEditing, onClick, row, col]);
 
   const handleBlur = useCallback(() => {
     setIsEditing(false);
-    onNameBlur?.();
+    if (onNameBlur) onNameBlur();
   }, [onNameBlur]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -79,50 +65,41 @@ const GridCellComponent: React.FC<GridCellProps> = ({
     onNameChange(row, col, e.target.value);
   }, [onNameChange, row, col]);
 
-  // Memoize cell styles
-  const cellClasses = useMemo(() => {
-    const baseClasses = 'relative w-full h-full transition-all duration-200 cursor-pointer rounded-[2px] overflow-hidden';
-    const mergeClasses = isMergeAnchor ? 'ring-4 ring-purple-500 ring-inset z-20' : '';
-    
-    switch (cellType) {
+  const isMerged = (data.rowSpan || 1) > 1 || (data.colSpan || 1) > 1;
+  const nameLength = data.name?.length || 0;
+
+  // Calculate text size
+  let textSizeClass = isMerged ? 'text-sm sm:text-base md:text-xl' : 'text-[10px] sm:text-xs md:text-sm';
+  if (nameLength > 12) textSizeClass = isMerged ? 'text-xs sm:text-sm md:text-lg' : 'text-[9px] sm:text-[11px]';
+  if (nameLength > 20) textSizeClass = isMerged ? 'text-[10px] sm:text-xs md:text-base' : 'text-[8px] sm:text-[10px]';
+
+  // Cell styles based on type
+  const baseClasses = `relative w-full h-full transition-all duration-200 cursor-pointer rounded-[2px] overflow-hidden ${isMergeAnchor ? 'ring-4 ring-purple-500 ring-inset z-20' : ''}`;
+  
+  let cellClasses = baseClasses;
+  switch (data.type) {
+    case 'student':
+      cellClasses += ' bg-white border-2 border-zinc-900 hover:border-emerald-600 shadow-sm';
+      break;
+    case 'teacher':
+      cellClasses += ' bg-blue-50 border-2 border-blue-900';
+      break;
+    case 'corridor-vertical':
+    case 'corridor-horizontal':
+      break;
+    default:
+      cellClasses += ` bg-transparent ${isExporting ? 'border-none' : 'border border-dashed border-zinc-300 hover:border-zinc-400'}`;
+  }
+
+  // Render content based on type
+  const renderContent = () => {
+    switch (data.type) {
       case 'student':
-        return `${baseClasses} ${mergeClasses} bg-white border-2 border-zinc-900 hover:border-emerald-600 shadow-sm`;
-      case 'teacher':
-        return `${baseClasses} ${mergeClasses} bg-blue-50 border-2 border-blue-900`;
-      case 'corridor-vertical':
-      case 'corridor-horizontal':
-        return `${baseClasses} ${mergeClasses}`;
-      default:
-        return `${baseClasses} ${mergeClasses} bg-transparent ${isExporting ? 'border-none' : 'border border-dashed border-zinc-300 hover:border-zinc-400'}`;
-    }
-  }, [cellType, isMergeAnchor, isExporting]);
-
-  // Memoize text size
-  const textSizeClass = useMemo(() => {
-    if (isMerged) {
-      if (nameLength > 20) return 'text-[10px] sm:text-xs md:text-base';
-      if (nameLength > 12) return 'text-xs sm:text-sm md:text-lg';
-      return 'text-sm sm:text-base md:text-xl';
-    }
-    if (nameLength > 20) return 'text-[8px] sm:text-[10px]';
-    if (nameLength > 12) return 'text-[9px] sm:text-[11px]';
-    return 'text-[10px] sm:text-xs md:text-sm';
-  }, [isMerged, nameLength]);
-
-  const iconSize = useMemo(() => 
-    isMerged ? STUDENT_ICON_SIZE_MERGED : STUDENT_ICON_SIZE,
-    [isMerged]
-  );
-
-  // Render content based on cell type - memoized
-  const content = useMemo(() => {
-    switch (cellType) {
-      case 'student': {
         return (
           <div className="w-full h-full flex flex-col items-center justify-center p-2 relative group">
             <div className="absolute top-0 inset-x-0 h-1.5 bg-zinc-900/10 group-hover:bg-emerald-500/20 transition-colors" />
             <div className="absolute top-2 right-2 text-zinc-200/50 pointer-events-none">
-              <User size={iconSize.width} strokeWidth={3} />
+              <User size={isMerged ? 16 : 12} strokeWidth={3} />
             </div>
             
             {isEditing ? (
@@ -147,9 +124,8 @@ const GridCellComponent: React.FC<GridCellProps> = ({
             )}
           </div>
         );
-      }
 
-      case 'teacher': {
+      case 'teacher':
         return (
           <div className="w-full h-full flex flex-col items-center justify-center relative group p-1 sm:p-2">
             <MonitorPlay className={`${isMerged ? 'w-6 h-6 sm:w-8 sm:h-8' : 'w-4 h-4 sm:w-5 sm:h-5'} text-blue-900 mb-0.5 sm:mb-1`} />
@@ -158,10 +134,9 @@ const GridCellComponent: React.FC<GridCellProps> = ({
             </span>
           </div>
         );
-      }
 
       case 'corridor-vertical':
-      case 'corridor-horizontal': {
+      case 'corridor-horizontal':
         return (
           <div 
             className="w-full h-full bg-zinc-100/50 relative shadow-inner border-x border-zinc-300/30"
@@ -171,42 +146,31 @@ const GridCellComponent: React.FC<GridCellProps> = ({
             }}
           />
         );
-      }
 
       default:
         return null;
     }
-  }, [cellType, data.name, isEditing, isExporting, isMerged, textSizeClass, iconSize, handleNameChange, handleBlur, handleKeyDown]);
+  };
 
   return (
     <div 
       onClick={handleClick}
       className={cellClasses}
-      style={{ contain: 'layout style paint' }}
+      style={style}
     >
-      {content}
+      {renderContent()}
     </div>
   );
 };
 
-// OPTIMIZED: Custom comparison that ignores irrelevant prop changes
+// Simple memo - only re-render if data actually changes
 export const GridCell = memo(GridCellComponent, (prevProps, nextProps) => {
-  // Early return for obvious changes
-  if (prevProps.row !== nextProps.row) return false;
-  if (prevProps.col !== nextProps.col) return false;
+  // Always re-render if these change
   if (prevProps.isMergeAnchor !== nextProps.isMergeAnchor) return false;
   if (prevProps.isExporting !== nextProps.isExporting) return false;
+  if (prevProps.selectedTool !== nextProps.selectedTool) return false;
   
-  // selectedTool only matters for student cells (triggers edit mode)
-  if (prevProps.selectedTool !== nextProps.selectedTool) {
-    // Only re-render if this is a student cell or was a student cell
-    if (prevProps.data.type === 'student' || nextProps.data.type === 'student') {
-      return false;
-    }
-  }
-  
-  // Deep compare data object - only check relevant fields
-  if (prevProps.data.id !== nextProps.data.id) return false;
+  // Check cell data
   if (prevProps.data.type !== nextProps.data.type) return false;
   if (prevProps.data.name !== nextProps.data.name) return false;
   if (prevProps.data.rowSpan !== nextProps.data.rowSpan) return false;

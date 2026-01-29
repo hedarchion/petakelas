@@ -16,7 +16,6 @@ const STORAGE_KEY = 'petakelas-data-v1';
 const MAX_ROWS = 20;
 const MAX_COLS = 20;
 const MAX_HISTORY = 50;
-const HISTORY_DEBOUNCE_MS = 300; // Debounce rapid clicks
 
 interface HistoryState {
   cells: CellData[];
@@ -29,15 +28,6 @@ interface SavedData {
   gridConfig: GridConfig;
   classInfo: ClassInfo;
   timestamp: number;
-}
-
-// Use a Map for O(1) cell lookups
-function createCellMap(cells: CellData[]): Map<string, CellData> {
-  const map = new Map<string, CellData>();
-  for (const cell of cells) {
-    map.set(`${cell.row}-${cell.col}`, cell);
-  }
-  return map;
 }
 
 // Memoized header component
@@ -133,24 +123,16 @@ function AppContent() {
   
   const [remountKey, setRemountKey] = useState(0);
 
-  // History management - use refs for better performance
+  // History management
   const [history, setHistory] = useState<HistoryState[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const isHistoryUpdate = useRef(false);
   const isResetting = useRef(false);
   const historyRef = useRef(history);
   const historyIndexRef = useRef(historyIndex);
-  const historyTimeoutRef = useRef<number | null>(null);
-  const pendingHistoryState = useRef<HistoryState | null>(null);
   
   useEffect(() => { historyRef.current = history; }, [history]);
   useEffect(() => { historyIndexRef.current = historyIndex; }, [historyIndex]);
-
-  // Create cell map for O(1) lookups - memoized
-  const cellMap = useRef<Map<string, CellData>>(new Map());
-  useEffect(() => {
-    cellMap.current = createCellMap(cells);
-  }, [cells]);
 
   // Local storage for auto-save
   const [savedData, setSavedData, removeSavedData] = useLocalStorage<SavedData | null>(STORAGE_KEY, null);
@@ -206,61 +188,24 @@ function AppContent() {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
-  // Optimized history push with debouncing
-  const flushHistory = useCallback(() => {
-    if (pendingHistoryState.current && !isHistoryUpdate.current && !isResetting.current) {
-      const stateToSave = pendingHistoryState.current;
-      pendingHistoryState.current = null;
-      
-      setHistory(prev => {
-        const currentIdx = historyIndexRef.current;
-        const newHistory = prev.slice(0, currentIdx + 1);
-        // Shallow clone is sufficient - cells array is already new
-        const nextHistory = [...newHistory, { ...stateToSave }];
-        return nextHistory.slice(-MAX_HISTORY);
-      });
-      
-      setHistoryIndex(prev => {
-        const nextIdx = prev + 1;
-        return nextIdx >= MAX_HISTORY ? MAX_HISTORY - 1 : nextIdx;
-      });
-    }
-  }, []);
-
+  // Simple history push - no debouncing to avoid state issues
   const pushToHistory = useCallback((newState: HistoryState) => {
     if (isHistoryUpdate.current || isResetting.current) return;
     
-    // Store pending state
-    pendingHistoryState.current = newState;
+    setHistory(prev => {
+      const currentIdx = historyIndexRef.current;
+      const newHistory = prev.slice(0, currentIdx + 1);
+      const nextHistory = [...newHistory, newState];
+      return nextHistory.slice(-MAX_HISTORY);
+    });
     
-    // Clear existing timeout
-    if (historyTimeoutRef.current) {
-      window.clearTimeout(historyTimeoutRef.current);
-    }
-    
-    // Flush immediately if it's been a while, otherwise debounce
-    historyTimeoutRef.current = window.setTimeout(() => {
-      flushHistory();
-    }, HISTORY_DEBOUNCE_MS);
-  }, [flushHistory]);
-
-  // Flush history on unmount
-  useEffect(() => {
-    return () => {
-      if (historyTimeoutRef.current) {
-        window.clearTimeout(historyTimeoutRef.current);
-        flushHistory();
-      }
-    };
-  }, [flushHistory]);
+    setHistoryIndex(prev => {
+      const nextIdx = prev + 1;
+      return nextIdx >= MAX_HISTORY ? MAX_HISTORY - 1 : nextIdx;
+    });
+  }, []);
 
   const handleUndo = useCallback(() => {
-    // Flush any pending history first
-    if (historyTimeoutRef.current) {
-      window.clearTimeout(historyTimeoutRef.current);
-      flushHistory();
-    }
-    
     const currentIdx = historyIndexRef.current;
     if (currentIdx > 0) {
       isHistoryUpdate.current = true;
@@ -276,7 +221,7 @@ function AppContent() {
         isHistoryUpdate.current = false; 
       });
     }
-  }, [flushHistory]);
+  }, []);
 
   const handleRedo = useCallback(() => {
     const currentIdx = historyIndexRef.current;
@@ -319,12 +264,9 @@ function AppContent() {
     }
   ]);
 
-  // OPTIMIZED: Use Map for O(1) lookups instead of findIndex
+  // FIXED: Stable cell click handler
   const handleCellClick = useCallback((row: number, col: number) => {
     if (viewMode) return;
-
-    const cellKey = `${row}-${col}`;
-    const existingCell = cellMap.current.get(cellKey);
 
     if (selectedTool === 'merge') {
       if (!mergeAnchor) {
@@ -338,90 +280,81 @@ function AppContent() {
         const rowSpan = endRow - startRow + 1;
         const colSpan = endCol - startCol + 1;
 
-        // Build new cells array efficiently
-        const newCells: CellData[] = [];
-        const mergedId = `${startRow}-${startCol}`;
-        
-        for (const cell of cells) {
-          const inMergeRange = cell.row >= startRow && cell.row <= endRow && 
-                              cell.col >= startCol && cell.col <= endCol;
-          if (!inMergeRange) {
-            newCells.push(cell);
-          }
-        }
-        
-        newCells.push({
-          id: mergedId,
-          row: startRow,
-          col: startCol,
-          type: 'student',
-          rowSpan,
-          colSpan,
-          name: ''
+        setCells(prev => {
+          const filtered = prev.filter(c => 
+            !(c.row >= startRow && c.row <= endRow && c.col >= startCol && c.col <= endCol)
+          );
+          const mergedBlock: CellData = {
+            id: `${startRow}-${startCol}`,
+            row: startRow,
+            col: startCol,
+            type: 'student',
+            rowSpan,
+            colSpan,
+            name: ''
+          };
+          const newCells = [...filtered, mergedBlock];
+          pushToHistory({ cells: newCells, gridConfig, classInfo });
+          return newCells;
         });
-
-        setCells(newCells);
-        pushToHistory({ cells: newCells, gridConfig, classInfo });
         setMergeAnchor(null);
         addToast(`Merged ${rowSpan * colSpan} cells`, 'success');
       }
       return;
     }
 
-    // Handle eraser
-    if (selectedTool === 'eraser') {
-      if (existingCell) {
-        const newCells = cells.filter(c => c !== existingCell);
-        setCells(newCells);
-        pushToHistory({ cells: newCells, gridConfig, classInfo });
+    setCells(prev => {
+      const existingIndex = prev.findIndex(c => c.row === row && c.col === col);
+      let nextCells: CellData[];
+      
+      if (selectedTool === 'eraser') {
+        if (existingIndex > -1) {
+          nextCells = prev.filter((_, idx) => idx !== existingIndex);
+          pushToHistory({ cells: nextCells, gridConfig, classInfo });
+          return nextCells;
+        }
+        return prev;
       }
-      return;
-    }
 
-    // If clicking on existing student with student tool, do nothing (edit mode)
-    if (selectedTool === 'student' && existingCell?.type === 'student') {
-      return;
-    }
+      if (selectedTool === 'student' && existingIndex > -1 && prev[existingIndex].type === 'student') {
+        return prev; 
+      }
 
-    // Create or update cell
-    const newCell: CellData = {
-      id: cellKey,
-      row,
-      col,
-      type: selectedTool,
-      name: selectedTool === 'student' ? '' : undefined,
-      rowSpan: existingCell?.rowSpan,
-      colSpan: existingCell?.colSpan,
-    };
+      const newCell: CellData = {
+        id: `${row}-${col}`,
+        row,
+        col,
+        type: selectedTool,
+        name: selectedTool === 'student' ? '' : undefined,
+        rowSpan: existingIndex > -1 ? prev[existingIndex].rowSpan : undefined,
+        colSpan: existingIndex > -1 ? prev[existingIndex].colSpan : undefined,
+      };
 
-    let newCells: CellData[];
-    if (existingCell) {
-      // Replace existing cell - find index once
-      const idx = cells.indexOf(existingCell);
-      newCells = [...cells];
-      newCells[idx] = newCell;
-    } else {
-      newCells = [...cells, newCell];
-    }
+      if (existingIndex > -1) {
+        nextCells = [...prev];
+        nextCells[existingIndex] = newCell;
+      } else {
+        nextCells = [...prev, newCell];
+      }
+      
+      pushToHistory({ cells: nextCells, gridConfig, classInfo });
+      return nextCells;
+    });
+  }, [selectedTool, viewMode, mergeAnchor, gridConfig, classInfo, pushToHistory, addToast]);
 
-    setCells(newCells);
-    pushToHistory({ cells: newCells, gridConfig, classInfo });
-  }, [selectedTool, viewMode, mergeAnchor, gridConfig, classInfo, cells, pushToHistory, addToast]);
-
-  // OPTIMIZED: Direct cell update without full array scan
+  // FIXED: Name change without breaking reactivity
   const handleCellNameChange = useCallback((row: number, col: number, name: string) => {
     if (viewMode) return;
-    
-    const cellKey = `${row}-${col}`;
-    const existingCell = cellMap.current.get(cellKey);
-    
-    if (existingCell && existingCell.name !== name) {
-      const idx = cells.indexOf(existingCell);
-      const newCells = [...cells];
-      newCells[idx] = { ...existingCell, name };
-      setCells(newCells);
-    }
-  }, [viewMode, cells]);
+    setCells(prev => {
+      const existingIndex = prev.findIndex(c => c.row === row && c.col === col);
+      if (existingIndex > -1 && prev[existingIndex].name !== name) {
+        const newCells = [...prev];
+        newCells[existingIndex] = { ...newCells[existingIndex], name };
+        return newCells;
+      }
+      return prev;
+    });
+  }, [viewMode]);
 
   const handleCellNameBlur = useCallback(() => {
     pushToHistory({ cells, gridConfig, classInfo });
@@ -432,34 +365,38 @@ function AppContent() {
       addToast(`Maximum ${MAX_ROWS} rows reached`, 'error');
       return;
     }
-    
-    let nextCells = cells;
-    if (position === 'top') {
-      nextCells = cells.map(c => ({ ...c, row: c.row + 1 }));
-    }
-    
-    const nextGrid = { ...gridConfig, rows: gridConfig.rows + 1 };
-    setCells(nextCells);
-    setGridConfig(nextGrid);
-    pushToHistory({ cells: nextCells, gridConfig: nextGrid, classInfo });
-  }, [gridConfig, classInfo, cells, pushToHistory, addToast]);
+    setCells(prevCells => {
+      let nextCells = prevCells;
+      if (position === 'top') {
+        nextCells = prevCells.map(c => ({ ...c, row: c.row + 1 }));
+      }
+      setGridConfig(prevGrid => {
+        const nextGrid = { ...prevGrid, rows: prevGrid.rows + 1 };
+        pushToHistory({ cells: nextCells, gridConfig: nextGrid, classInfo });
+        return nextGrid;
+      });
+      return nextCells;
+    });
+  }, [gridConfig.rows, classInfo, pushToHistory, addToast]);
 
   const handleAddCol = useCallback((position: 'left' | 'right') => {
     if (gridConfig.cols >= MAX_COLS) {
       addToast(`Maximum ${MAX_COLS} columns reached`, 'error');
       return;
     }
-    
-    let nextCells = cells;
-    if (position === 'left') {
-      nextCells = cells.map(c => ({ ...c, col: c.col + 1 }));
-    }
-    
-    const nextGrid = { ...gridConfig, cols: gridConfig.cols + 1 };
-    setCells(nextCells);
-    setGridConfig(nextGrid);
-    pushToHistory({ cells: nextCells, gridConfig: nextGrid, classInfo });
-  }, [gridConfig, classInfo, cells, pushToHistory, addToast]);
+    setCells(prevCells => {
+      let nextCells = prevCells;
+      if (position === 'left') {
+        nextCells = prevCells.map(c => ({ ...c, col: c.col + 1 }));
+      }
+      setGridConfig(prevGrid => {
+        const nextGrid = { ...prevGrid, cols: prevGrid.cols + 1 };
+        pushToHistory({ cells: nextCells, gridConfig: nextGrid, classInfo });
+        return nextGrid;
+      });
+      return nextCells;
+    });
+  }, [gridConfig.cols, classInfo, pushToHistory, addToast]);
 
   const handleReset = useCallback(() => {
     setShowResetConfirm(true);
@@ -543,7 +480,7 @@ function AppContent() {
 
   return (
     <>
-      <div className="flex flex-col lg:flex-row h-screen bg-zinc-950 text-zinc-100 overflow-hidden font-sans" data-device-view="responsive">
+      <div className="flex flex-col lg:flex-row h-screen bg-zinc-950 text-zinc-100 overflow-hidden font-sans">
         <MobileHeader 
           className={classInfo.name}
           viewMode={viewMode}

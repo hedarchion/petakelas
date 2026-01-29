@@ -37,9 +37,9 @@
         will-change: transform;
       }
       
-      /* Prevent pull-to-refresh on mobile */
-      html, body {
-        overscroll-behavior: none;
+      /* Smooth scrolling */
+      html {
+        scroll-behavior: smooth;
       }
       
       /* Responsive text sizing base */
@@ -116,18 +116,7 @@
         }
       }
       
-      /* Performance: GPU acceleration for animated elements */
-      .gpu-accelerated {
-        transform: translateZ(0);
-        backface-visibility: hidden;
-        perspective: 1000px;
-      }
-      
-      /* Performance: Content visibility for off-screen content */
-      .content-visibility-auto {
-        content-visibility: auto;
-        contain-intrinsic-size: 0 500px;
-      }
+
       
       /* Line clamp utility */
       .line-clamp-4 {
