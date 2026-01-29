@@ -2,29 +2,155 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
     <title>Petakelas Seating Plan</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+      
+      * {
+        -webkit-tap-highlight-color: transparent;
+        box-sizing: border-box;
+      }
+      
+      /* Performance: CSS containment for paint/layout isolation */
+      
+      .contain-layout {
+        contain: layout;
+      }
+      
+      .contain-paint {
+        contain: paint;
+      }
+      
+      .contain-strict {
+        contain: strict;
+      }
+      
+      .contain-content {
+        contain: content;
+      }
+      
       body {
         font-family: 'Inter', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        touch-action: pan-x pan-y;
+        /* Performance: promote to own layer */
+        will-change: transform;
       }
+      
+      /* Prevent pull-to-refresh on mobile */
+      
+      html, body {
+        overscroll-behavior: none;
+      }
+      
+      /* Responsive text sizing base */
+      
+      html {
+        font-size: 14px;
+      }
+      
+      @media (min-width: 480px) {
+        html { font-size: 15px; }
+      }
+      
+      @media (min-width: 768px) {
+        html { font-size: 16px; }
+      }
+      
       /* Custom scrollbar for dark theme */
+      
       ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
+        width: 6px;
+        height: 6px;
       }
+      
+      @media (min-width: 768px) {
+        ::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+      }
+      
       ::-webkit-scrollbar-track {
         background: #18181b; 
       }
+      
       ::-webkit-scrollbar-thumb {
         background: #27272a; 
         border-radius: 4px;
       }
+      
       ::-webkit-scrollbar-thumb:hover {
         background: #3f3f46; 
+      }
+      
+      /* Mobile-specific improvements */
+      
+      @media (max-width: 480px) {
+        ::-webkit-scrollbar {
+          width: 4px;
+          height: 4px;
+        }
+      }
+      
+      /* Tablet-specific adjustments */
+      
+      @media (min-width: 481px) and (max-width: 1024px) {
+        ::-webkit-scrollbar {
+          width: 6px;
+          height: 6px;
+        }
+      }
+      
+      /* Safe area for notched devices */
+      
+      @supports (padding: max(0px)) {
+        .safe-area-inset {
+          padding-left: max(1rem, env(safe-area-inset-left));
+          padding-right: max(1rem, env(safe-area-inset-right));
+          padding-bottom: max(1rem, env(safe-area-inset-bottom));
+        }
+      }
+      
+      /* Performance: Reduce motion for users who prefer it */
+      
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+          scroll-behavior: auto !important;
+        }
+      }
+      
+      /* Performance: GPU acceleration for animated elements */
+      
+      .gpu-accelerated {
+        transform: translateZ(0);
+        backface-visibility: hidden;
+        perspective: 1000px;
+      }
+      
+      /* Performance: Content visibility for off-screen content */
+      
+      .content-visibility-auto {
+        content-visibility: auto;
+        contain-intrinsic-size: 0 500px;
+      }
+      
+      /* Line clamp utility */
+      
+      .line-clamp-4 {
+        display: -webkit-box;
+        -webkit-line-clamp: 4;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
       }
     </style>
 
@@ -39,7 +165,7 @@
   }
 }
 </script>
-  <script type="module" crossorigin src="/petakelas/assets/index-CZNhsBsl.js"></script>
+  <script type="module" crossorigin src="/petakelas/assets/index-6UlZqpbr.js"></script>
 </head>
   <body class="bg-zinc-950 text-zinc-100 h-screen overflow-hidden">
     <div id="root" class="h-full w-full"></div>
